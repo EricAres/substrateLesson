@@ -3,17 +3,10 @@
 /// A module for proof of existence
 
 use frame_support::{
-	decl_module,
-	decl_storage,
-	decl_event,
-	decl_error,
-	ensure,
-	dispatch::{DispatchResult},
+	decl_module, decl_storage, decl_event, decl_error, ensure,
+	dispatch::DispatchResult,
 };
-use frame_system::{
-	self as system,
-	ensure_signed,
-};
+use frame_system::{self as system, ensure_signed};
 use sp_std::vec::Vec;
 
 #[cfg(test)]
@@ -21,18 +14,19 @@ mod mock;
 
 #[cfg(test)]
 mod tests;
+
+const MAX_CLAIM_SIZE: usize = 1024;
+
 /// The pallet's configuration trait.
 pub trait Trait: system::Trait {
 	/// The overarching event type.
 	type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
-	// setMax Length limit
-	type MaxClaimLength: frame_support::traits::Get<u32>;
 }
 
 // This pallet's storage items.
 decl_storage! {
-	trait Store for Module<T: Trait> as TemplateModule {
-		Proofs get(fn proof): map hasher(twox_64_concat) Vec<u8> => (T::AccountId, T::BlockNumber);
+	trait Store for Module<T: Trait> as PoeModule {
+		Proofs get(fn proof): map hasher(blake2_128_concat) Vec<u8> => (T::AccountId, T::BlockNumber);
 	}
 }
 
@@ -41,6 +35,7 @@ decl_event!(
 	pub enum Event<T> where AccountId = <T as system::Trait>::AccountId {
 		ClaimCreated(AccountId, Vec<u8>),
 		ClaimRevoked(AccountId, Vec<u8>),
+		ClaimTransfered(AccountId, AccountId, Vec<u8>),
 	}
 );
 
@@ -50,7 +45,7 @@ decl_error! {
 		ProofAlreadyExist,
 		ClaimNotExist,
 		NotClaimOwner,
-		LengthLimitOut,
+		ClaimTooLong,
 	}
 }
 
@@ -63,20 +58,18 @@ decl_module! {
 		// it is needed only if you are using errors in your pallet
 		type Error = Error<T>;
 
- 		// Initializing events
+		// Initializing events
 		// this is needed only if you are using events in your pallet
 		fn deposit_event() = default;
 
-
-		#[weight = 0]
+		#[weight = 10_000]
 		pub fn create_claim(origin, claim: Vec<u8>) -> DispatchResult {
-			
 			let sender = ensure_signed(origin)?;
 
+			ensure!(claim.len() <= MAX_CLAIM_SIZE, Error::<T>::ClaimTooLong);
+
 			ensure!(!Proofs::<T>::contains_key(&claim), Error::<T>::ProofAlreadyExist);
-			//lenth limit
-			// ensure!( T::MaxClaimLength::get() >= claim.len() as u32, Error::<T>::LengthLimitOut);
-			// ensure!( T::MaxClaimLength::get() >= claim.len() as u32, Error::<T>::LengthLimitOut);
+
 			Proofs::<T>::insert(&claim, (sender.clone(), system::Module::<T>::block_number()));
 
 			Self::deposit_event(RawEvent::ClaimCreated(sender, claim));
@@ -84,7 +77,7 @@ decl_module! {
 			Ok(())
 		}
 
-		#[weight = 0]
+		#[weight = 10_000]
 		pub fn revoke_claim(origin, claim: Vec<u8>) -> DispatchResult {
 			let sender = ensure_signed(origin)?;
 
@@ -101,17 +94,21 @@ decl_module! {
 			Ok(())
 		}
 
-		#[weight = 0]
-		pub fn transfer_claim(origin, claim: Vec<u8>, dest: T::AccountId) -> DispatchResult {
+		#[weight = 10_000]
+		pub fn transfer_claim(origin, claim: Vec<u8>, to: T::AccountId, ) -> DispatchResult {
 			let sender = ensure_signed(origin)?;
 
 			ensure!(Proofs::<T>::contains_key(&claim), Error::<T>::ClaimNotExist);
 
-			let (owner, _block_number) = Proofs::<T>::get(&claim);
+			let (owner, block_number) = Proofs::<T>::get(&claim);
 
 			ensure!(owner == sender, Error::<T>::NotClaimOwner);
 
-			Proofs::<T>::insert(&claim, (dest, system::Module::<T>::block_number()));
+			Proofs::<T>::remove(&claim);
+
+			Proofs::<T>::insert(&claim, (to.clone(), block_number));
+
+			Self::deposit_event(RawEvent::ClaimTransfered(sender, to, claim));
 
 			Ok(())
 		}

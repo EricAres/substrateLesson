@@ -6,7 +6,7 @@
 ---
 
 - git地址：https://github.com/EricAres/substrate-node-eric.git
-- 之后迁移到：https://github.com/EricAres/substrateLesson
+- 之后迁移到：https://github.com/EricAres/substrateLesson.git
 - 存证部分，创建、撤销、转移，采用的是substrate2.0
 
 ```
@@ -101,9 +101,21 @@ std = [
 
 
 metadata、assets、balances
-此课首次完成在
-# 3. 第三课作业
+
+3. 第三课作业
+
+   kitties小毛孩的前后端打通。
+
+   
+
+
+4. 第四课作业
+- 升级系统到substrat 3.0
+- 打通智能合约和pallet通信
+- 合约:erc20/flipper/incrementer/rand-extension
+
 ink contract练习
+
 - 第一个例子，可以做到。用canvas
 - 第二个例子，需要用到pallet调用，而pallet调用需要chainextention，这个时候需要升级substrate到3.0
 - 升级substrate3.0过程
@@ -115,16 +127,9 @@ ink contract练习
 | runtime                            | 增加pallet-contract内容，从substrate迁移，共12处 |
 | node/cargo.toml                    | 增加pallet-contracts-rpc = '3.0.0'               |
 | node/rpc.rs                        | pallet_contracts_rpc&&io.extend_with             |
+
 ```
 增加use pallet_contracts_rpc::{Contracts, ContractsApi};
 和io.extend_with(ContractsApi::to_delegate(Contracts::new(client.clone()));
 ```
 
-
-
-
-4. 第四课作业
-- 升级系统到substrat 3.0
-- 打通智能合约和pallet通信
-- 合约:erc20/flipper/incrementer/rand-extension
-- 
