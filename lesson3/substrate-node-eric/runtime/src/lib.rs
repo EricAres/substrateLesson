@@ -13,7 +13,7 @@ use sp_runtime::{
 	transaction_validity::{TransactionValidity, TransactionSource},
 };
 use sp_runtime::traits::{
-	BlakeTwo256, Block as BlockT, IdentityLookup, Verify, IdentifyAccount, NumberFor, Saturating,
+	BlakeTwo256, Block as BlockT, Verify, IdentifyAccount, NumberFor, Saturating,
 };
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -40,11 +40,7 @@ pub use frame_support::{
 
 /// Import the template pallet.
 pub use pallet_template;
-pub use pallet_kitties;
-pub use pallet_poe;
 
-
-//此处测试通过后，需要做一下，去掉pub看是否好使，因为kitties并没有提供给其它模块使用
 /// An index to a block.
 pub type BlockNumber = u32;
 
@@ -99,7 +95,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	spec_name: create_runtime_str!("node-template"),
 	impl_name: create_runtime_str!("node-template"),
 	authoring_version: 1,
-	spec_version: 1,
+	spec_version: 100,
 	impl_version: 1,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 1,
@@ -134,14 +130,8 @@ parameter_types! {
 	pub const MaximumBlockLength: u32 = 5 * 1024 * 1024;
 	pub const Version: RuntimeVersion = VERSION;
 }
-parameter_types! {
-	pub const MaxClaimLength: u32 = 6;
-}
+
 // Configure FRAME pallets to include in runtime.
-impl pallet_poe::Trait for Runtime{
-	type Event =Event;
-	type MaxClaimLength =MaxClaimLength;
-}
 
 impl frame_system::Trait for Runtime {
 	/// The basic call filter to use in dispatchable.
@@ -151,7 +141,7 @@ impl frame_system::Trait for Runtime {
 	/// The aggregated dispatch type that is available for extrinsics.
 	type Call = Call;
 	/// The lookup mechanism to get account ID from whatever is passed in dispatchers.
-	type Lookup = IdentityLookup<AccountId>;
+	type Lookup = multiaddress::AccountIdLookup<AccountId, ()>;
 	/// The index type for storing how many extrinsics an account has signed.
 	type Index = Index;
 	/// The index type for blocks.
@@ -186,7 +176,7 @@ impl frame_system::Trait for Runtime {
 	type MaximumBlockLength = MaximumBlockLength;
 	/// Portion of the block weight that is available to all normal transactions.
 	type AvailableBlockRatio = AvailableBlockRatio;
-	/// Version of the runtime.`
+	/// Version of the runtime.
 	type Version = Version;
 	/// Converts a module to the index of the module in `construct_runtime!`.
 	///
@@ -246,7 +236,7 @@ impl pallet_balances::Trait for Runtime {
 	type MaxLocks = MaxLocks;
 	/// The type for recording an account's balance.
 	type Balance = Balance;
-	/// The ubiquitous event type
+	/// The ubiquitous event type.
 	type Event = Event;
 	type DustRemoval = ();
 	type ExistentialDeposit = ExistentialDeposit;
@@ -256,7 +246,6 @@ impl pallet_balances::Trait for Runtime {
 
 parameter_types! {
 	pub const TransactionByteFee: Balance = 1;
-	// pub const MaxproofLength:u8=8;
 }
 
 impl pallet_transaction_payment::Trait for Runtime {
@@ -275,20 +264,19 @@ impl pallet_sudo::Trait for Runtime {
 /// Configure the template pallet in pallets/template.
 impl pallet_template::Trait for Runtime {
 	type Event = Event;
-	// type MaxproofLength=MaxproofLength;
 }
 
-/// Configure the template pallet in pallets/kitties.kitties
-parameter_types! {
-	pub const LockAmount: u64 = 5_000;
+impl pallet_poe::Trait for Runtime {
+	type Event = Event;
 }
+
 impl pallet_kitties::Trait for Runtime {
 	type Event = Event;
 	type Randomness = RandomnessCollectiveFlip;
 	type KittyIndex = u32;
 	type Currency = Balances;
-	type LockAmount = LockAmount;
 }
+
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
 	pub enum Runtime where
@@ -306,14 +294,14 @@ construct_runtime!(
 		Sudo: pallet_sudo::{Module, Call, Config<T>, Storage, Event<T>},
 		// Include the custom logic from the template pallet in the runtime.
 		TemplateModule: pallet_template::{Module, Call, Storage, Event<T>},
-		KittiesModule: pallet_kitties::{Module, Call, Storage, Event<T>},
 		PoeModule: pallet_poe::{Module, Call, Storage, Event<T>},
-
+		KittiesModule: pallet_kitties::{Module, Call, Storage, Event<T>},
 	}
 );
 
 /// The address format for describing accounts.
-pub type Address = AccountId;
+mod multiaddress;
+pub type Address = multiaddress::MultiAddress<AccountId, ()>;
 /// Block header type as expected by this runtime.
 pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
 /// Block type as expected by this runtime.
