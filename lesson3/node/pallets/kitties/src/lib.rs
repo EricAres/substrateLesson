@@ -3,7 +3,6 @@
 use codec::{Encode, Decode};
 use frame_support::{
 	decl_module, decl_storage, decl_error, decl_event, ensure, StorageValue, StorageMap, Parameter,
-	debug,
 	traits::{Randomness, Currency, ExistenceRequirement},
 };
 use sp_io::hashing::blake2_128;
@@ -18,7 +17,7 @@ pub struct Kitty(pub [u8; 16]);
 
 pub trait Trait: frame_system::Trait {
 	type Event: From<Event<Self>> + Into<<Self as frame_system::Trait>::Event>;
-	type KittyIndex: Parameter + Member + AtLeast32Bit + Default + Copy;
+	type KittyIndex: Parameter + Member + AtLeast32Bit + Default + Copy + From<u32>;
 	type Currency: Currency<Self::AccountId>;
 	type Randomness: Randomness<Self::Hash>;
 }
@@ -46,14 +45,6 @@ decl_storage! {
 		/// Get kitty price. None means not for sale.
 		pub KittyPrices get(fn kitty_price): map hasher(blake2_128_concat) T::KittyIndex =>
 			Option<BalanceOf<T>>;
-
-		// 记录某只猫的父母，因为猫可能没有父母，所以用 Option
-		pub KittyParents get(fn kitty_parents):map hasher(blake2_128_concat) T::KittyIndex => Option<(T::KittyIndex, T::KittyIndex)>;
-		// 记录某只猫的孩子们，第一个值是主猫，第二个是孩子，值也是孩子
-		pub KittyChildren get(fn kitty_children):double_map hasher(blake2_128_concat) T::KittyIndex, hasher(blake2_128_concat) T::KittyIndex => Option<T::KittyIndex>;
-		// 记录某只猫的伴侣，第一个是主猫，第二个是伴侣猫，值是伴侣猫
-		pub KittyPartners get(fn kitty_partners):double_map hasher(blake2_128_concat) T::KittyIndex, hasher(blake2_128_concat) T::KittyIndex => Option<T::KittyIndex>;
-
 	}
 }
 
@@ -122,10 +113,7 @@ decl_module! {
 		pub fn transfer(origin, to: T::AccountId, kitty_id: T::KittyIndex) {
 			let sender = ensure_signed(origin)?;
 
-			// jc-note: This line failed, so I am checking `kitty_owner`,
-			//   ref: https://github.com/SubstrateCourse/kitties-course/issues/3
-			// ensure!(<OwnedKitties<T>>::contains_key((&sender, Some(kitty_id))), Error::<T>::RequireOwner);
-			ensure!(Self::kitty_owner(kitty_id) == Some(sender.clone()), "Kitty is not owned by sender.");
+			ensure!(Self::kitty_owner(kitty_id) == Some(sender.clone()), Error::<T>::RequireOwner);
 
 			Self::do_transfer(&sender, &to, kitty_id);
 
@@ -194,43 +182,22 @@ impl<T: Trait> Module<T> {
 		<KittyOwners<T>>::insert(kitty_id, owner);
 	}
 
-	fn insert_kitty(owner: &T::AccountId, child_id: T::KittyIndex, child: Kitty,parent::Option<(T::KittyIndex,T::KittyIndex>) {
-		// Create and store kitty记录所有者
-		Kitties::<T>::insert(child_id, child.clone());
-		KittiesCount::<T>::put(child_id + 1.into());
-		Self::insert_owned_kitty(owner, child_id);
-		// // 记录某只猫的父母，因为猫可能没有父母，所以用 Option
-		// pub KittyParents get(fn kitty_parents):map hasher(blake2_128_concat) T::KittyIndex => Option<(T::KittyIndex, T::KittyIndex)>;
-		// // 记录某只猫的孩子们，第一个值是主猫，第二个是孩子，值也是孩子
-		// pub KittyChildren get(fn kitty_children):double_map hasher(blake2_128_concat) T::KittyIndex, hasher(blake2_128_concat) T::KittyIndex => Option<T::KittyIndex>;
-		// // 记录某只猫的伴侣，第一个是主猫，第二个是伴侣猫，值是伴侣猫
-		// pub KittyPartners get(fn kitty_partners):double_map hasher(blake2_128_concat) T::KittyIndex, hasher(blake2_128_concat) T::KittyIndex => Option<T::KittyIndex>;
-
-		match parent{
-			Some((father_id::KittyIndex,mather_id::KittyIndex))=>{
-				//找到了父母
-				//记录孩子-父母 =》KittyParents
-				KittyParents::<T>::insert(chind_id,(father_id,mather_id));
-				//记录父母-孩子=》KittyChildren
-				KittyChildren::<T>::insert(parent,child);//父母元组做key，如果单独父子、母子，则fatherid、matherid
-				//记录伴侣=>KittyPartners
-				KittyPartners::<T>::insert(father_id,mather_id);
-				KittyPartners::<T>::insert(mather_id,father_id);
-			}
-		}
-
+	fn insert_kitty(owner: &T::AccountId, kitty_id: T::KittyIndex, kitty: Kitty) {
+		// Create and store kitty
+		Kitties::<T>::insert(kitty_id, kitty.clone());
+		KittiesCount::<T>::put(kitty_id + 1u32.into());
+		Self::insert_owned_kitty(owner, kitty_id);
 	}
 
 	fn do_breed(sender: &T::AccountId, kitty_id_1: T::KittyIndex, kitty_id_2: T::KittyIndex) -> sp_std::result::Result<T::KittyIndex, DispatchError> {
-		//找到父母两节点
 		let kitty1 = Self::kitties(kitty_id_1).ok_or(Error::<T>::InvalidKittyId)?;
 		let kitty2 = Self::kitties(kitty_id_2).ok_or(Error::<T>::InvalidKittyId)?;
 
 		ensure!(<OwnedKitties<T>>::contains_key((&sender, Some(kitty_id_1))), Error::<T>::RequireOwner);
 		ensure!(<OwnedKitties<T>>::contains_key((&sender, Some(kitty_id_2))), Error::<T>::RequireOwner);
 		ensure!(kitty_id_1 != kitty_id_2, Error::<T>::RequireDifferentParent);
-//下一个id
-		let child_id = Self::next_kitty_id()?;
+
+		let kitty_id = Self::next_kitty_id()?;
 
 		let kitty1_dna = kitty1.0;
 		let kitty2_dna = kitty2.0;
@@ -244,9 +211,7 @@ impl<T: Trait> Module<T> {
 			new_dna[i] = combine_dna(kitty1_dna[i], kitty2_dna[i], selector[i]);
 		}
 
-		let mut child=Kitty(new_dna);
-
-		Self::insert_kitty(sender, child_id, child,Some((kitty_id_1,kitty_id_2)));
+		Self::insert_kitty(sender, kitty_id, Kitty(new_dna));
 
 		Ok(kitty_id)
 	}
@@ -268,6 +233,7 @@ mod tests {
 		traits::{BlakeTwo256, IdentityLookup}, testing::Header, Perbill,
 	};
 	use frame_system as system;
+	use pallet_balances as balances;
 
 	impl_outer_origin! {
 		pub enum Origin for Test {}
@@ -283,10 +249,11 @@ mod tests {
 		pub const MaximumBlockWeight: Weight = 1024;
 		pub const MaximumBlockLength: u32 = 2 * 1024;
 		pub const AvailableBlockRatio: Perbill = Perbill::from_percent(75);
+	
+		pub const ExistentialDeposit: u64 = 1;
 	}
 	impl system::Trait for Test {
 		type Origin = Origin;
-		type BaseCallFilter = ();
 		type Call = ();
 		type Index = u64;
 		type BlockNumber = u64;
@@ -306,19 +273,35 @@ mod tests {
 		type AvailableBlockRatio = AvailableBlockRatio;
 		type Version = ();
 		type SystemWeightInfo = ();
-		type PalletInfo = PalletInfo;
-		type AccountData = ();
+		type PalletInfo = ();
+		type AccountData = pallet_balances::AccountData<u64>;
 		type OnNewAccount = ();
 		type OnKilledAccount = ();
-		}
+		type BaseCallFilter = ();
+	}
+
+	impl balances::Trait for Test {
+		type Balance = u64;
+		type MaxLocks = ();
+		type Event = ();
+		type DustRemoval = ();
+		type ExistentialDeposit = ExistentialDeposit;
+		type AccountStore = system::Module<Test>;
+		type WeightInfo = ();
+	}
+
+	type Balances = balances::Module<Test>;
+	type RandomnessCollectiveFlip = pallet_randomness_collective_flip::Module<Test>;
 
 	impl Trait for Test {
-		type Event = ();
-		type Currency: Balances;
-		type Randomness: Randomness<H256>;
 		type KittyIndex = u32;
+		type Event = ();
+		type Currency = Balances;
+		type Randomness = RandomnessCollectiveFlip;
 	}
 	type OwnedKittiesTest = OwnedKitties<Test>;
+	type KittyLinkedItem = LinkedItem<<Test as Trait>::KittyIndex>;
+	type OwnedKittiesList = LinkedList<OwnedKitties<Test>, <Test as system::Trait>::AccountId, <Test as Trait>::KittyIndex>;
 
 	// This function basically just builds a genesis storage key/value store according to
 	// our desired mockup.
@@ -329,11 +312,55 @@ mod tests {
 	#[test]
 	fn owned_kitties_can_append_values() {
 		new_test_ext().execute_with(|| {
-			OwnedKittiesTest::append(&1);
+			OwnedKittiesList::append(&0, 1);
 
 			assert_eq!(OwnedKittiesTest::get(&(0, None)), Some(KittyLinkedItem {
 				prev: Some(1),
 				next: Some(1),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(1))), Some(KittyLinkedItem {
+				prev: None,
+				next: None,
+			}));
+
+			OwnedKittiesList::append(&0, 2);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, None)), Some(KittyLinkedItem {
+				prev: Some(2),
+				next: Some(1),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(1))), Some(KittyLinkedItem {
+				prev: None,
+				next: Some(2),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(2))), Some(KittyLinkedItem {
+				prev: Some(1),
+				next: None,
+			}));
+
+			OwnedKittiesList::append(&0, 3);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, None)), Some(KittyLinkedItem {
+				prev: Some(3),
+				next: Some(1),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(1))), Some(KittyLinkedItem {
+				prev: None,
+				next: Some(2),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(2))), Some(KittyLinkedItem {
+				prev: Some(1),
+				next: Some(3),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(3))), Some(KittyLinkedItem {
+				prev: Some(2),
+				next: None,
 			}));
 		});
 	}
@@ -341,16 +368,57 @@ mod tests {
 	#[test]
 	fn owned_kitties_can_remove_values() {
 		new_test_ext().execute_with(|| {
-			OwnedKittiesTest::append(1);
-			OwnedKittiesTest::append(2);
-			OwnedKittiesTest::append(3);
+			OwnedKittiesList::append(&0, 1);
+			OwnedKittiesList::append(&0, 2);
+			OwnedKittiesList::append(&0, 3);
 
-			OwnedKittiesTest::remove(2);
+			OwnedKittiesList::remove(&0, 2);
 
 			assert_eq!(OwnedKittiesTest::get(&(0, None)), Some(KittyLinkedItem {
 				prev: Some(3),
 				next: Some(1),
 			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(1))), Some(KittyLinkedItem {
+				prev: None,
+				next: Some(3),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(2))), None);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(3))), Some(KittyLinkedItem {
+				prev: Some(1),
+				next: None,
+			}));
+
+			OwnedKittiesList::remove(&0, 1);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, None)), Some(KittyLinkedItem {
+				prev: Some(3),
+				next: Some(3),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(1))), None);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(2))), None);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(3))), Some(KittyLinkedItem {
+				prev: None,
+				next: None,
+			}));
+
+			OwnedKittiesList::remove(&0, 3);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, None)), Some(KittyLinkedItem {
+				prev: None,
+				next: None,
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(1))), None);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(2))), None);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(2))), None);
 		});
 	}
 }
