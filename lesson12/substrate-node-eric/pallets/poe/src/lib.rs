@@ -21,6 +21,8 @@ const MAX_CLAIM_SIZE: usize = 1024;
 pub trait Trait: system::Trait {
 	/// The overarching event type.
 	type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
+	type MaxClaimLength: frame_support::traits::Get<u32>;
+
 }
 
 // This pallet's storage items.
@@ -66,7 +68,7 @@ decl_module! {
 		pub fn create_claim(origin, claim: Vec<u8>) -> DispatchResult {
 			let sender = ensure_signed(origin)?;
 
-			ensure!(claim.len() <= MAX_CLAIM_SIZE, Error::<T>::ClaimTooLong);
+			// ensure!(  T::MaxClaimLength::get()  <= claim.len() as u32, Error::<T>::ClaimTooLong);
 
 			ensure!(!Proofs::<T>::contains_key(&claim), Error::<T>::ProofAlreadyExist);
 
